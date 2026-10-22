@@ -1,0 +1,16 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+
+# macOS
+.DS_Store
