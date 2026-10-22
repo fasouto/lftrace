@@ -78,7 +78,7 @@ def get_weather(city: str, attempt: int) -> str:
 
 @observe(name="search_places", as_type="retriever")
 def search_places(query: str) -> list[str]:
-    embed("embed_query", query)
+    embed(query)
     time.sleep(0.2)
     return list(PLACES)
 

@@ -9,7 +9,7 @@ import time
 import urllib.request
 from collections.abc import Callable
 
-from langfuse import Langfuse, get_client
+from langfuse import Langfuse, get_client, observe
 
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 
@@ -36,19 +36,14 @@ def complete(system: str, prompt: str, fake: str) -> str:
     return text
 
 
-def embed(name: str, text: str) -> list[float]:
-    """A fake embedding, traced as an embedding observation."""
-    # update_current_generation() would turn the embedding into a generation,
-    # so this observation sets its model and usage when it starts.
-    with get_client().start_as_current_observation(
-        name=name,
-        as_type="embedding",
-        input=text,
-        model="fake-embedding",
-        usage_details={"input": count_tokens(text)},
-    ):
-        time.sleep(0.1)
-        return [0.0] * 8
+@observe(name="embed_query", as_type="embedding")
+def embed(text: str) -> list[float]:
+    """A fake embedding with a made-up token count."""
+    time.sleep(0.1)
+    get_client().update_current_generation(
+        model="fake-embedding", usage_details={"input": count_tokens(text)}
+    )
+    return [0.0] * 8
 
 
 def count_tokens(text: str) -> int:

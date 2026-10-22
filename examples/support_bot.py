@@ -53,7 +53,7 @@ def lookup_account(customer_id: str) -> dict:
 
 @observe(name="search_policy", as_type="retriever")
 def search_policy(question: str) -> str:
-    embed("embed_query", question)
+    embed(question)
     time.sleep(0.2)
     return "Duplicate charges are refunded in full within 5 working days."
 
