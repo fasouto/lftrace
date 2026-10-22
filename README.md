@@ -14,6 +14,8 @@ Paste the `--mermaid` output into Claude Code, or let it run the command itself,
 sees what your app's agent did: the steps in the order they ran, with durations, tokens,
 cost and every error message in full. No screenshots, no browser.
 
+lftrace is a prototype. See [Limitations](#limitations) for what it doesn't do yet.
+
 ![lftrace demo](docs/demo.gif)
 
 ```
@@ -154,7 +156,7 @@ v2 observations API). On Python 3.10 it installs Langfuse SDK v4; on 3.11+, v5.
 
 ## Limitations
 
-lftrace is a toy project. Before it's ready for production, Termaid, the library that
+lftrace is a prototype. Before it's ready for production, Termaid, the library that
 draws the diagrams, needs a few changes: drawing steps with many children without
 crossing lines, reading `<br>` line breaks in labels, and coloring label text. Until then,
 lftrace works around them, and some of the limits below come from that.
