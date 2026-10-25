@@ -50,6 +50,39 @@ Trace c8747b0761d23f523151d65142f00555 · 1.63s · 132 tokens · $0.00 · 1 warn
 
 In a terminal, errors are red and warnings yellow.
 
+`--timeline` draws the same steps as bars on a time axis, so steps that ran at the same
+time overlap:
+
+```
+$ lftrace --file tests/fixtures/trace.json --timeline
+Trace 7f3e0c2a9b1d4e6f8a0b2c4d6e8f0a1b · 6.21s · 2,522 tokens · $0.0005 · 2 errors · 1 warning
+
+   research-agent              │███████████████████████████████████████████████
+   1. plan                     │██████
+   2. search_docs              │       ███
+   2.1. cache-miss             │       ◆
+   2.2. vector-search          │       ██
+   ✗ 3. get_weather            │          ████████████████
+   4. fetch_pages              │          ███████████████████████████
+   4.1. fetch_page_1           │          ██████
+   4.2. fetch_page_2           │          █████████
+   4.3. fetch_page_3           │           ███████████
+   4.4. fetch_page_4           │           █████████████
+   ✗ 4.5. fetch_page_5         │           ████████████████
+   4.6. fetch_page_6           │           ██████████████████
+   4.7. fetch_page_7           │           █████████████████████
+   4.8. fetch_page_8           │           ███████████████████████
+   4.9. fetch_page_9           │           ██████████████████████████
+   ! 5. answer                 │                                     █████████
+   6. format "final" [answer]… │                                              █
+                               └┬──────────────┬──────────────┬──────────────┬─
+                               0s             2s             4s             6s
+
+✗ 3. get_weather (TOOL): TimeoutError: weather API timed out after 2s
+✗ 4.5. fetch_page_5 (TOOL): HTTP 503 from example.org
+! 5. answer (GENERATION): answered without weather data
+```
+
 ## Install
 
 ```sh
@@ -109,6 +142,7 @@ lftrace --latest             show the most recent trace (from the last 7 days)
 lftrace --file trace.json    show a trace saved as JSON, without network
 
   --mermaid    print the Mermaid source instead of the drawing
+  --timeline   draw the steps on a time axis instead of as a tree
   --depth N    show only the first N levels
 ```
 
@@ -123,6 +157,13 @@ To keep big traces readable, a step with more than three children shows the firs
 last with a `+N more` box in between, and `--depth` folds deeper levels into a `+N nested`
 line. Hidden errors and warnings are still counted in those boxes and listed under the
 diagram with their step numbers.
+
+`--timeline` shows each step as a bar on a time axis that starts at the trace's start, so
+parallel steps overlap. A row has the step's number, name and a bar from its start to its
+end. It shows every step, not just the first and last, and `--depth` folds levels as in the
+tree. An event is a `◆`, and a step with no end time runs to the end of the chart. A failed
+step starts with `✗` and a warning with `!`. With `--mermaid` it prints a Mermaid gantt
+chart.
 
 ### Credentials
 
@@ -148,7 +189,8 @@ lftrace --file trace.json
 1. Fetch the trace's observations with the Langfuse Python SDK
    (`api.observations.get_many(trace_id=...)`, all pages).
 2. Build a tree from each observation's parent id, with siblings ordered by start time.
-3. Write it as a left-to-right Mermaid flowchart (`--mermaid` shows it).
+3. Write it as a left-to-right Mermaid flowchart, or with `--timeline` as a gantt chart
+   (`--mermaid` shows it).
 4. Draw it with [Termaid](https://github.com/fasouto/termaid) (`termaid.render_rich()`).
 
 lftrace works with Langfuse Cloud and recent self-hosted Langfuse versions (it uses the
@@ -161,19 +203,20 @@ draws the diagrams, needs a few changes: drawing steps with many children withou
 crossing lines, reading `<br>` line breaks in labels, and coloring label text. Until then,
 lftrace works around them, and some of the limits below come from that.
 
-- **Three children per step.** A step with more children shows the first and the last,
-  with `+N more` in between, because Termaid 0.9.1 draws crossing lines when a node has
-  more than three children. Errors and warnings in the hidden steps are still counted
-  and listed.
+- **Three children per step in the tree.** A step with more children shows the first and
+  the last, with `+N more` in between, because Termaid 0.10.0 draws stray lines when a
+  node has more than three children. Errors and warnings in the hidden steps are still
+  counted and listed. `--timeline` shows every step.
 - **Deep traces get wide.** Each level adds about 35 columns, so four levels fit in 120.
   For deeper traces, use a wider terminal or `--depth`.
-- **No parallelism.** Steps are ordered by start time, so steps that ran at the same time
-  look like they ran one after another.
+- **A fixed width for the timeline.** Termaid 0.10.0 draws gantt charts 80 columns wide,
+  whatever the terminal, so names are cut at 24 characters and short steps in a long trace
+  can be a single block.
 - **No inputs, outputs or scores.** The diagram shows each step's place in the tree, its
   timing, tokens, cost and status. Open the trace in Langfuse for the rest.
 - **Short labels.** Boxes cut names at 40 characters and messages at 30. The full
   messages are listed under the diagram and in the `--mermaid` comments.
-- **`\n` line breaks.** Labels break lines with `\n` because Termaid 0.9.1 doesn't read
+- **`\n` line breaks.** Labels break lines with `\n` because Termaid 0.10.0 doesn't read
   `<br>`. mermaid.live and GitHub show them as line breaks, but some viewers show `\n`
   as text.
 - **`--latest` looks back 7 days**, and a new trace can take a few seconds to show up.
