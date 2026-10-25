@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
 def color_symbols(drawing: Text) -> None:
     """Color the ✗ or ! that starts a status line inside a box.
 
-    Termaid 0.9.1 colors a box's border from its classDef, but not its text.
+    Termaid 0.10.0 colors a box's border from its classDef, but not its text.
     """
     status_of = {symbol: status for status, symbol in SYMBOLS.items()}
     for match in re.finditer(r"│ *([✗!]) ", drawing.plain):

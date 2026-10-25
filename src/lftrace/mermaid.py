@@ -8,11 +8,11 @@ from collections.abc import Iterable
 
 from .tree import Observation, descendants, number_steps
 
-# Termaid 0.9.1 breaks label lines on a literal "\n" and shows Mermaid's
+# Termaid 0.10.0 breaks label lines on a literal "\n" and shows Mermaid's
 # standard <br> as text, so we use "\n". Switch to "<br>" once Termaid reads it.
 LINE_BREAK = "\\n"
 
-# Siblings shown before the middle ones collapse into "+N more". Termaid 0.9.1
+# Siblings shown before the middle ones collapse into "+N more". Termaid 0.10.0
 # draws crossing lines when a node has more than three children.
 MAX_CHILDREN = 3
 MAX_NAME = 40
@@ -38,7 +38,7 @@ def to_mermaid(
     Comments go right after the header as %% lines, so they travel with the
     source without changing the drawing. The edges come after all the nodes.
     """
-    # Termaid 0.9.1 splits lines on ";" before it drops comments, so the rest
+    # Termaid 0.10.0 splits lines on ";" before it drops comments, so the rest
     # of a comment after a ";" would be parsed as nodes.
     lines = ["graph LR", *(f"%% {' '.join(c.split())}".replace(";", ",") for c in comments)]
     numbers = number_steps(roots)
@@ -103,7 +103,7 @@ def label(obs: Observation, number: str | None = None) -> list[str]:
 def middle_first(items: list[str]) -> list[str]:
     """Order a fan-out's edges from the middle child outwards.
 
-    Termaid 0.9.1 routes edges in the order they're listed. When the middle edge
+    Termaid 0.10.0 routes edges in the order they're listed. When the middle edge
     goes first it runs straight, and the others branch off it without detours.
     """
     center = (len(items) - 1) / 2
