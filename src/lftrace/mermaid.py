@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import itertools
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from .tree import Observation, descendants, number_steps
 
@@ -21,6 +21,51 @@ MAX_MESSAGE = 30  # the full message is listed under the diagram
 STATUS = {"ERROR": "error", "WARNING": "warning"}
 SYMBOLS = {"error": "✗", "warning": "!"}
 COLORS = {"error": "#e5484d", "warning": "#f5a524"}
+
+
+@dataclass(eq=False)  # identity hashing: to_mermaid keys node ids by item
+class Step:
+    """A step the diagram shows. Past max_depth its descendants fold into it."""
+
+    obs: Observation
+    number: str | None  # None only for a single root, which stands for the trace
+    nested: list[Observation]  # descendants folded away by max_depth
+    parent: Step | None
+
+
+@dataclass(eq=False)
+class More:
+    """Siblings collapsed into one "+N more" item."""
+
+    steps: list[Observation]
+    parent: Step | None
+
+    @property
+    def hidden(self) -> list[Observation]:
+        """The collapsed siblings and everything under them."""
+        return [o for step in self.steps for o in (step, *descendants(step))]
+
+
+def visible(
+    roots: list[Observation], *, max_depth: int | None, max_children: int | None
+) -> list[Step | More]:
+    """What a diagram shows of the tree, each item before its children. Roots are at depth 1."""
+    numbers = number_steps(roots)
+    items: list[Step | More] = []
+
+    def add_level(observations: list[Observation], parent: Step | None, depth: int) -> None:
+        for item in collapse(observations, max_children):
+            if isinstance(item, list):
+                items.append(More(item, parent))
+                continue
+            expand = max_depth is None or depth < max_depth
+            step = Step(item, numbers.get(item.id), [] if expand else list(descendants(item)), parent)
+            items.append(step)
+            if expand:
+                add_level(item.children, step, depth + 1)
+
+    add_level(roots, None, 1)
+    return items
 
 
 def to_mermaid(
@@ -41,42 +86,27 @@ def to_mermaid(
     # Termaid 0.10.0 splits lines on ";" before it drops comments, so the rest
     # of a comment after a ";" would be parsed as nodes.
     lines = ["graph LR", *(f"%% {' '.join(c.split())}".replace(";", ",") for c in comments)]
-    numbers = number_steps(roots)
-    ids = (f"n{i}" for i in itertools.count())
+    items = visible(roots, max_depth=max_depth, max_children=max_children)
+    ids = {item: f"n{i}" for i, item in enumerate(items)}
+    fan_outs: dict[Step, list[str]] = {}  # each parent with its children's ids
     used: set[str] = set()
-    fan_outs: list[tuple[str, list[str]]] = []  # each parent with its children's ids
-
-    def add_node(parts: list[str], status: str | None, more: bool = False) -> str:
-        node_id = next(ids)
-        open_, close = ("(", ")") if more else ("[", "]")
+    for item in items:
+        if isinstance(item, More):
+            parts = [f"+{len(item.steps)} more", *problems(item.hidden)]
+            status, open_, close = worst(item.hidden), "(", ")"
+        else:
+            parts = label(item.obs, item.number)
+            if item.nested:
+                parts += [f"+{len(item.nested)} nested", *problems(item.nested)]
+            status, open_, close = STATUS.get(item.obs.level or ""), "[", "]"
         text = LINE_BREAK.join(escape(part) for part in parts)
-        lines.append(f'  {node_id}{open_}"{text}"{close}' + (f":::{status}" if status else ""))
+        lines.append(f'  {ids[item]}{open_}"{text}"{close}' + (f":::{status}" if status else ""))
         if status:
             used.add(status)
-        return node_id
-
-    def add_level(observations: list[Observation], parent: str | None, depth: int) -> None:
-        children: list[str] = []
-        if parent:
-            fan_outs.append((parent, children))
-        for item in collapse(observations, max_children):
-            if isinstance(item, list):
-                hidden = [o for h in item for o in (h, *descendants(h))]
-                children.append(add_node([f"+{len(item)} more", *problems(hidden)], worst(hidden), more=True))
-                continue
-            parts = label(item, numbers.get(item.id))
-            expand = max_depth is None or depth < max_depth
-            if item.children and not expand:
-                hidden = list(descendants(item))
-                parts += [f"+{len(hidden)} nested", *problems(hidden)]
-            node_id = add_node(parts, STATUS.get(item.level or ""))
-            children.append(node_id)
-            if expand:
-                add_level(item.children, node_id, depth + 1)
-
-    add_level(roots, None, 1)
-    for parent, children in fan_outs:
-        lines += [f"  {parent} --> {child}" for child in middle_first(children)]
+        if item.parent:
+            fan_outs.setdefault(item.parent, []).append(ids[item])
+    for parent, children in fan_outs.items():
+        lines += [f"  {ids[parent]} --> {child}" for child in middle_first(children)]
     for status in sorted(used):
         lines.append(f"  classDef {status} stroke:{COLORS[status]},color:{COLORS[status]}")
     return "\n".join(lines) + "\n"
@@ -125,9 +155,9 @@ def problems(observations: Iterable[Observation]) -> list[str]:
     return lines
 
 
-def collapse(items: list[Observation], max_children: int) -> list[Observation | list[Observation]]:
-    """Keep the first and last items of a long list; group the middle ones."""
-    if len(items) <= max_children:
+def collapse(items: list[Observation], max_children: int | None) -> list[Observation | list[Observation]]:
+    """Keep the first and last items of a long list; group the middle ones. None keeps them all."""
+    if max_children is None or len(items) <= max_children:
         return list(items)
     keep = max_children - 1  # one slot goes to the "+N more" node
     head, tail = keep - keep // 2, keep // 2
