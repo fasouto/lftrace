@@ -24,17 +24,20 @@ NASTY_NAMES = [
     "a; b --> c & d",
     "`code` **bold**",
     "graph TD",
+    "#123; &amp; <lambda>",
 ]
 
 
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ('say "hi"', "say 'hi'"),
+        ('say "hi"', "say #34;hi#34;"),
         ("line one\nline  two", "line one line two"),
         ("C:\\new", "C:/new"),
-        ("50%% done", "50% % done"),
-        ("a:::b", "a: ::b"),
+        ("50%% done a:::b", "50%% done a:::b"),
+        ("#123; &amp; #1 & 2", "#35;123; #38;amp; #1 & 2"),
+        ("<lambda> a < b", "#60;lambda> a #60; b"),
+        ("`code` **bold**", "#96;code` **bold**"),
         ("arr[0] {x} (y) |z|", "arr[0] {x} (y) |z|"),
     ],
 )
@@ -52,9 +55,16 @@ def test_nasty_names_do_not_break_mermaid(name):
 
     assert list(graph.nodes) == ["n0", "n1"]
     assert [(e.source, e.target) for e in graph.edges] == [("n0", "n1")]
-    assert f"1. {escape(name)}" in graph.nodes["n1"].label
+    as_written = " ".join(name.split()).replace("\\", "/")
+    assert graph.nodes["n1"].label.split("\\n")[0] == f"1. {as_written}"
     assert graph.nodes["n1"].style_class == "error"
     termaid.render(source)  # and it draws without raising
+
+
+def test_a_root_named_with_a_backtick_is_not_a_markdown_label():
+    graph = termaid.parse(to_mermaid([Observation(id="r", type="AGENT", name="`code` x")]))
+
+    assert graph.nodes["n0"].label.split("\\n")[0] == "`code` x"
 
 
 def test_each_step_points_to_its_children(roots):

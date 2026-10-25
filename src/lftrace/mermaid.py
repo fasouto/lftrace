@@ -136,13 +136,17 @@ def collapse(items: list[Observation], max_children: int) -> list[Observation | 
 
 
 def escape(text: str) -> str:
-    """Make text safe inside a double-quoted label, as Termaid parses it."""
+    """Make text safe inside a double-quoted label, as Mermaid and Termaid read it.
+
+    What either would read as markup becomes a decimal entity code, which both
+    decode: quotes, the start of an HTML tag or of a Markdown label, and anything
+    that looks like an entity code already, so it shows as written.
+    """
     text = " ".join(text.split())  # a newline would end the statement
-    text = text.replace('"', "'")  # Termaid doesn't decode #quot;
-    text = text.replace("\\", "/")  # a literal \n would become a line break
-    text = re.sub(r"%(?=%)", "% ", text)  # %% starts a comment, even inside quotes
-    text = re.sub(r":(?=::)", ": ", text)  # ::: assigns a class, even inside quotes
-    return text
+    # Termaid 0.10.0 decodes entity codes before it breaks lines on a literal
+    # "\n", so even "#92;n" would become a line break.
+    text = text.replace("\\", "/")
+    return re.sub(r'^`|["<]|[#&](?=\w+;)', lambda m: f"#{ord(m[0])};", text)
 
 
 def truncate(text: str | None, limit: int = MAX_NAME) -> str:
