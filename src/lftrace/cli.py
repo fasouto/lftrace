@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.text import Text
 
 from .fetch import FetchError, client, fetch_observations, latest_trace_id, load_file
-from .mermaid import COLORS, SYMBOLS, to_mermaid
+from .mermaid import COLORS, SYMBOLS, to_gantt, to_mermaid
 from .summary import headline, issues, plain
 from .tree import Observation, build_tree
 
@@ -44,9 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     roots = build_tree(observations)
     header = headline(trace_id, observations)
     problems = issues(roots)
-    source = to_mermaid(
-        roots, max_depth=args.depth, comments=[plain(header), *(line for _, line in problems)]
-    )
+    draw = to_gantt if args.timeline else to_mermaid
+    source = draw(roots, max_depth=args.depth, comments=[plain(header), *(line for _, line in problems)])
     if args.mermaid:
         print(source, end="")
         return 0
@@ -66,13 +65,14 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def color_symbols(drawing: Text) -> None:
-    """Color the ✗ or ! that starts a status line inside a box.
+    """Color the ✗ or ! that starts a status line inside a box, or a timeline row.
 
-    Termaid 0.10.0 colors a box's border from its classDef, but not its text.
+    Termaid 0.10.0 colors a box's border from its classDef, but not its text,
+    and draws crit bars like the others. It draws a timeline's task names dim.
     """
     status_of = {symbol: status for status, symbol in SYMBOLS.items()}
-    for match in re.finditer(r"│ *([✗!]) ", drawing.plain):
-        drawing.stylize(COLORS[status_of[match[1]]], *match.span(1))
+    for match in re.finditer(r"(?m)(?:│|^) *([✗!]) ", drawing.plain):
+        drawing.stylize(f"not dim {COLORS[status_of[match[1]]]}", *match.span(1))
 
 
 def styled(parts: list[tuple[str, str | None]]) -> Text:
@@ -98,6 +98,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--mermaid", action="store_true", help="print the Mermaid source instead of the drawing"
+    )
+    parser.add_argument(
+        "--timeline", action="store_true", help="draw the steps on a time axis instead of as a tree"
     )
     parser.add_argument(
         "--depth", type=positive_int, metavar="N", help="show only the first N levels of the tree"

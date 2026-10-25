@@ -1,12 +1,13 @@
-"""Turn an observation tree into a left-to-right Mermaid flowchart."""
+"""Turn an observation tree into a left-to-right Mermaid flowchart, or a gantt chart of when the steps ran."""
 
 from __future__ import annotations
 
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 
-from .tree import Observation, descendants, number_steps
+from .tree import Observation, descendants, number_steps, walk
 
 # Termaid 0.10.0 breaks label lines on a literal "\n" and shows Mermaid's
 # standard <br> as text, so we use "\n". Switch to "<br>" once Termaid reads it.
@@ -17,10 +18,36 @@ LINE_BREAK = "\\n"
 MAX_CHILDREN = 3
 MAX_NAME = 40
 MAX_MESSAGE = 30  # the full message is listed under the diagram
+# Termaid 0.10.0 draws gantt charts 80 columns wide, and the longest task name
+# takes its width from the bars.
+MAX_TASK_NAME = 24
 
 STATUS = {"ERROR": "error", "WARNING": "warning"}
 SYMBOLS = {"error": "✗", "warning": "!"}
 COLORS = {"error": "#e5484d", "warning": "#f5a524"}
+
+# Tick intervals as Mermaid writes them, from the finest, with their length in
+# milliseconds. Each count divides the next unit, so ticks land on round times.
+TICKS = [
+    (count * size, f"{count}{unit}")
+    for unit, size, counts in [
+        ("millisecond", 1, (1, 2, 5, 10, 20, 50, 100, 200, 500)),
+        ("second", 1000, (1, 2, 5, 10, 15, 30)),
+        ("minute", 60_000, (1, 2, 5, 10, 15, 30)),
+        ("hour", 3_600_000, (1, 2, 3, 6, 12)),
+    ]
+    for count in counts
+]
+
+# A gantt line that starts like this isn't a task for Mermaid 11 or Termaid
+# 0.10.0, whatever follows. Lines start with a step number or a status symbol,
+# except for a single root's, which has no number.
+KEYWORD = re.compile(
+    r".?%|\d{4}-\d\d-\d\d|gantt|inclusiveenddates|topaxis|accdescr|href"
+    r"|(title|section|dateformat|axisformat|tickinterval|includes|excludes|todaymarker|weekday|weekend"
+    r"|vert|click|call)\s",
+    re.IGNORECASE,
+)
 
 
 @dataclass(eq=False)  # identity hashing: to_mermaid keys node ids by item
@@ -83,9 +110,7 @@ def to_mermaid(
     Comments go right after the header as %% lines, so they travel with the
     source without changing the drawing. The edges come after all the nodes.
     """
-    # Termaid 0.10.0 splits lines on ";" before it drops comments, so the rest
-    # of a comment after a ";" would be parsed as nodes.
-    lines = ["graph LR", *(f"%% {' '.join(c.split())}".replace(";", ",") for c in comments)]
+    lines = ["graph LR", *comment_lines(comments)]
     items = visible(roots, max_depth=max_depth, max_children=max_children)
     ids = {item: f"n{i}" for i, item in enumerate(items)}
     fan_outs: dict[Step, list[str]] = {}  # each parent with its children's ids
@@ -110,6 +135,85 @@ def to_mermaid(
     for status in sorted(used):
         lines.append(f"  classDef {status} stroke:{COLORS[status]},color:{COLORS[status]}")
     return "\n".join(lines) + "\n"
+
+
+def to_gantt(
+    roots: list[Observation],
+    *,
+    max_depth: int | None = None,
+    max_children: int | None = None,
+    comments: Iterable[str] = (),
+) -> str:
+    """Mermaid gantt source: the same steps as to_mermaid(), as bars on a time axis.
+
+    Times are milliseconds since the trace started, read as Unix times
+    (dateFormat x), so the axis shows elapsed time. A step without an end runs
+    to the end of the chart (the latest start or end) as an active bar, and an event is a milestone.
+    """
+    observations = list(walk(roots))
+    starts = [o.start_time for o in observations if o.start_time]
+    if not starts:
+        return "\n".join(["gantt", *comment_lines(comments)]) + "\n"
+    start = min(starts)
+    end = max([*starts, *(o.end_time for o in observations if o.end_time)])
+
+    def ms(t: datetime) -> int:
+        return round((t - start).total_seconds() * 1000)
+
+    lines = ["gantt", *comment_lines(comments), "  dateFormat x", *axis(ms(end))]
+    for item in visible(roots, max_depth=max_depth, max_children=max_children):
+        if isinstance(item, More):
+            covered, status, name = item.hidden, worst(item.hidden), f"+{len(item.steps)} more"
+        else:
+            covered, status = [item.obs], worst([item.obs, *item.nested])
+            name = escape_task(truncate(item.obs.name, MAX_TASK_NAME) or item.obs.type)
+            if item.number:
+                name = f"{item.number}. {name}"
+            elif KEYWORD.match(name):
+                name = f"{item.obs.type} {name}"
+            if item.nested:
+                name += f" +{len(item.nested)} nested"
+        starts = [o.start_time for o in covered if o.start_time]
+        if not starts:
+            continue  # nothing to place it by
+        ends = [o.end_time for o in covered if o.end_time]
+        tags = ["crit"] if status == "error" else []
+        if isinstance(item, Step) and item.obs.type == "EVENT":
+            tags.append("milestone")
+            ends = starts
+        elif not ends:
+            tags.append("active")
+            ends = [end]
+        if status:
+            name = f"{SYMBOLS[status]} {name}"
+        begin, finish = ms(min(starts)), ms(max(ends))
+        lines.append(f"  {name} :{''.join(f'{tag}, ' for tag in tags)}{begin}, {finish - begin}ms")
+    return "\n".join(lines) + "\n"
+
+
+def comment_lines(comments: Iterable[str]) -> list[str]:
+    # Termaid 0.10.0 splits flowchart lines on ";" before it drops comments, so
+    # the rest of a comment after a ";" would be parsed as nodes.
+    return [f"%% {' '.join(c.split())}".replace(";", ",") for c in comments]
+
+
+def axis(span_ms: int) -> list[str]:
+    """axisFormat and tickInterval lines: up to five ticks on round times, read as elapsed time.
+
+    Termaid 0.10.0 spreads its default ticks evenly but labels them with whole
+    units, so the labels drift from the bars. Ticks at a set interval sit at
+    their times.
+    """
+    step, interval = next(((ms, i) for ms, i in TICKS if span_ms / ms <= 5), TICKS[-1])
+    # %Q and %s count from 1970, where the chart starts. Mermaid draws %M and %H
+    # in the viewer's timezone, so those labels shift in a browser.
+    if step < 1000:
+        fmt = "%Qms"
+    elif step < 60_000:
+        fmt = "%ss"
+    else:
+        fmt = "%M:%S" if span_ms < 3_600_000 else "%H:%M"
+    return [f"  axisFormat {fmt}", f"  tickInterval {interval}"]
 
 
 def label(obs: Observation, number: str | None = None) -> list[str]:
@@ -177,6 +281,18 @@ def escape(text: str) -> str:
     # "\n", so even "#92;n" would become a line break.
     text = text.replace("\\", "/")
     return re.sub(r'^`|["<]|[#&](?=\w+;)', lambda m: f"#{ord(m[0])};", text)
+
+
+def escape_task(text: str) -> str:
+    """Make text safe as a gantt task name, as Mermaid and Termaid read it.
+
+    Termaid 0.10.0 doesn't decode entity codes in gantt charts, so where escape()
+    writes a code this swaps in a look-alike or a space.
+    """
+    text = " ".join(text.split())  # a newline would end the task
+    text = text.replace(":", "∶")  # the first ":" ends the name
+    text = re.sub(r"%(?=%)", "% ", text)  # Termaid 0.10.0 starts a comment at any %%
+    return re.sub(r"#(?=\w+;)", "# ", text)  # Mermaid would decode it
 
 
 def truncate(text: str | None, limit: int = MAX_NAME) -> str:

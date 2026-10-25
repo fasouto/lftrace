@@ -28,7 +28,46 @@ def test_status_symbols_inside_boxes_are_colored():
     drawing = Text("│  ✗ timed out  │\n│ ! no weather │\n│ hi! there ✗ │")
     cli.color_symbols(drawing)
     colored = [(drawing.plain[s.start : s.end], s.style) for s in drawing.spans]
-    assert colored == [("✗", COLORS["error"]), ("!", COLORS["warning"])]
+    assert colored == [("✗", f"not dim {COLORS['error']}"), ("!", f"not dim {COLORS['warning']}")]
+
+
+def test_status_symbols_starting_timeline_rows_are_colored():
+    drawing = Text("   ✗ 3. get_weather  │████\n   5. answer!        │  ██")
+    cli.color_symbols(drawing)
+    assert [(drawing.plain[s.start : s.end], s.style) for s in drawing.spans] == [
+        ("✗", f"not dim {COLORS['error']}")
+    ]
+
+
+def test_timeline_draws_bars_on_a_time_axis(capsys):
+    assert cli.main(["--file", str(FIXTURE), "--timeline"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0] == f"Trace {TRACE_ID} · 6.21s · 2,522 tokens · $0.0005 · 2 errors · 1 warning"
+    assert any(line.startswith("   ✗ 4.5. fetch_page_5 ") and "█" in line for line in lines)
+    assert any(line.split() == ["0s", "2s", "4s", "6s"] for line in lines)
+    assert lines[-3:] == [
+        "✗ 3. get_weather (TOOL): TimeoutError: weather API timed out after 2s",
+        "✗ 4.5. fetch_page_5 (TOOL): HTTP 503 from example.org",
+        "! 5. answer (GENERATION): answered without weather data",
+    ]
+
+
+def test_timeline_depth_folds_levels_like_the_tree(capsys):
+    assert cli.main(["--file", str(FIXTURE), "--timeline", "--depth", "2"]) == 0
+    out = capsys.readouterr().out
+    assert "✗ 4. fetch_pages +9 nested" in out
+    assert "fetch_page_1" not in out.split("✗ 3. get_weather (TOOL)")[0]
+
+
+def test_timeline_mermaid_prints_gantt_source_with_totals_and_full_errors(capsys):
+    assert cli.main(["--file", str(FIXTURE), "--timeline", "--mermaid", "--depth", "1"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[:3] == [
+        "gantt",
+        f"%% Trace {TRACE_ID} · 6.21s · 2,522 tokens · $0.0005 · 2 errors · 1 warning",
+        "%% ✗ 3. get_weather (TOOL): TimeoutError: weather API timed out after 2s",
+    ]
+    assert lines[-1] == "  ✗ research-agent +17 nested :crit, 0, 6215ms"
 
 
 def test_mermaid_flag_prints_the_source_with_totals_and_full_errors(capsys):
