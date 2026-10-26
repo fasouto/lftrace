@@ -4,7 +4,8 @@
 #
 # Run it from the repo root with your Langfuse keys in .env. Off camera, it
 # runs each example agent, which sends a trace to Langfuse, and waits until
-# the trace shows up. On camera, `lftrace --latest` draws it.
+# the trace shows up. On camera, `lftrace --latest` draws it, and for the
+# trip planner `lftrace --latest --timeline` shows when each step ran.
 
 Output docs/demo.gif
 
@@ -42,6 +43,11 @@ Show
 Type "lftrace --latest"
 Enter
 Sleep 8s
+
+Ctrl+L
+Type "lftrace --latest --timeline"
+Enter
+Sleep 6s
 
 # support_bot
 Hide
