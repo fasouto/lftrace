@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import os
 import sys
 import time
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from langfuse import Langfuse, get_client, observe
 
@@ -72,8 +74,8 @@ def ask_openrouter(system: str, prompt: str) -> tuple[str, str, dict]:
     )
 
 
-def run(agent: Callable[..., str], question: str) -> int:
-    """Run an @observe-decorated agent in a new trace, print its answer and the trace id."""
+def run(agent: Callable[..., str | Awaitable[str]], question: str) -> int:
+    """Run an @observe-decorated agent, sync or async, in a new trace. Print its answer and the trace id."""
     missing = [name for name in ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY") if not os.environ.get(name)]
     if missing:
         print(
@@ -84,7 +86,10 @@ def run(agent: Callable[..., str], question: str) -> int:
 
     trace_id = Langfuse.create_trace_id()
     try:
-        print(agent(question, langfuse_trace_id=trace_id))
+        answer = agent(question, langfuse_trace_id=trace_id)
+        if inspect.isawaitable(answer):
+            answer = asyncio.run(answer)
+        print(answer)
     finally:
         get_client().flush()
     print(f"\nTrace {trace_id} sent. Show it with `uv run lftrace --latest`.")
