@@ -108,14 +108,16 @@ If you'd rather keep the keys in a file, `cp .env.example .env`, fill it in, and
 shape:
 
 - `demo_agent.py`: a trip planner for a rainy day in Lisbon. A weather call times out and
-  is retried, a retriever finds places and a tool checks their opening hours. A writer
-  sub-agent drafts the day, a guardrail flags a place with no opening hours, and the
-  writer revises.
+  is retried, a retriever finds places and a tool checks their opening hours. The weather
+  lookup and the place finding run at the same time, and so do the opening hours checks.
+  A writer sub-agent drafts the day, a guardrail flags a place with no opening hours, and
+  the writer revises.
 - `support_bot.py`: a support bot hands a billing question to a sub-agent, which looks up
-  the account, searches the refund policy and asks for a refund that needs a human's
-  approval.
+  the account and searches the refund policy at the same time, then asks for a refund
+  that needs a human's approval.
 - `coding_agent.py`: a coding agent needs five attempts to fix a failing test. lftrace
-  folds the middle attempts into `+3 more` and counts their errors.
+  folds the middle attempts into `+3 more` and counts their errors. The attempts run one
+  after another, so its timeline has no overlap.
 
 They need only Langfuse keys. With `OPENROUTER_API_KEY` set, their LLM steps are real calls
 through [OpenRouter](https://openrouter.ai).

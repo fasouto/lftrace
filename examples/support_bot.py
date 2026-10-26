@@ -1,9 +1,9 @@
 """A fake support bot that hands billing questions to a sub-agent.
 
 A triage step routes the question to a billing agent. The billing agent looks
-up the account, searches the refund policy and asks for a refund, which needs
-a human's approval, so the trace has 1 warning. A final step writes the reply.
-It needs only your Langfuse keys:
+up the account and searches the refund policy at the same time, then asks for
+a refund, which needs a human's approval, so the trace has 1 warning. A final
+step writes the reply. It needs only your Langfuse keys:
 
     uv run examples/support_bot.py
 
@@ -12,8 +12,8 @@ With OPENROUTER_API_KEY set, the LLM steps are real calls through OpenRouter.
 
 from __future__ import annotations
 
+import asyncio
 import sys
-import time
 
 from langfuse import get_client, observe
 
@@ -24,9 +24,9 @@ REFUND_LIMIT = 20  # euros the bot may refund without a human
 
 
 @observe(name="support-bot", as_type="agent")
-def run_agent(question: str) -> str:
+async def run_agent(question: str) -> str:
     team = triage(question)
-    notes = billing_agent(question) if "billing" in team.lower() else ""
+    notes = await billing_agent(question) if "billing" in team.lower() else ""
     return reply(question, notes)
 
 
@@ -36,31 +36,36 @@ def triage(question: str) -> str:
 
 
 @observe(name="billing-agent", as_type="agent")
-def billing_agent(question: str) -> str:
-    account = lookup_account("cus_1042")
-    policy = search_policy(question)
+async def billing_agent(question: str) -> str:
+    async def later_search_policy() -> str:
+        # Langfuse stores times to the millisecond, so calls started together would
+        # come out in a random order. Start the second one a few ms after the first.
+        await asyncio.sleep(0.01)
+        return await search_policy(question)
+
+    account, policy = await asyncio.gather(lookup_account("cus_1042"), later_search_policy())
     charges = account["charges"]
     duplicate = next((charge for i, charge in enumerate(charges) if charge in charges[:i]), None)
-    status = refund(duplicate) if duplicate else "no duplicate charge"
+    status = await refund(duplicate) if duplicate else "no duplicate charge"
     return f"Charges: {account['charges']}\nPolicy: {policy}\nRefund: {status}"
 
 
 @observe(name="lookup_account", as_type="tool")
-def lookup_account(customer_id: str) -> dict:
-    time.sleep(0.3)
+async def lookup_account(customer_id: str) -> dict:
+    await asyncio.sleep(0.3)
     return {"id": customer_id, "plan": "Pro", "charges": [("2026-10-01", 29.0), ("2026-10-01", 29.0)]}
 
 
 @observe(name="search_policy", as_type="retriever")
-def search_policy(question: str) -> str:
+async def search_policy(question: str) -> str:
     embed(question)
-    time.sleep(0.2)
+    await asyncio.sleep(0.2)
     return "Duplicate charges are refunded in full within 5 working days."
 
 
 @observe(name="refund", as_type="tool")
-def refund(charge: tuple[str, float]) -> str:
-    time.sleep(0.2)
+async def refund(charge: tuple[str, float]) -> str:
+    await asyncio.sleep(0.2)
     day, amount = charge
     if amount > REFUND_LIMIT:
         get_client().update_current_span(

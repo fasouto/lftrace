@@ -2,10 +2,12 @@
 
 It plans a rainy Saturday in Lisbon. It makes a plan, then researches: a
 weather call times out and is retried, a retriever finds places and a tool
-checks their opening hours. A writer sub-agent drafts the day, a guardrail
-flags a place with no opening hours, and the writer revises. The steps are
-fixed, and without an LLM key every run gives the same trace, with 1 error
-and 2 warnings. It needs only your Langfuse keys:
+checks their opening hours. The agent is async, so the weather lookup runs at
+the same time as the place finding, and every place is checked at the same
+time. A writer sub-agent drafts the day, a guardrail flags a place with no
+opening hours, and the writer revises. The steps are fixed, and without an
+LLM key every run gives the same trace, with 1 error and 2 warnings. It needs
+only your Langfuse keys:
 
     export LANGFUSE_PUBLIC_KEY=pk-lf-... LANGFUSE_SECRET_KEY=sk-lf-...
     export LANGFUSE_HOST=https://cloud.langfuse.com  # or your region / self-hosted URL
@@ -17,6 +19,7 @@ With OPENROUTER_API_KEY set, the LLM steps are real calls through OpenRouter
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import time
 
@@ -37,9 +40,9 @@ PLACES = {
 
 
 @observe(name="trip-planner", as_type="agent")
-def run_agent(question: str) -> str:
+async def run_agent(question: str) -> str:
     plan(question)
-    weather, hours = research()
+    weather, hours = await research()
     return write_itinerary(question, weather, hours)
 
 
@@ -53,44 +56,54 @@ def plan(question: str) -> str:
 
 
 @observe(name="research", as_type="chain")
-def research() -> tuple[str, dict[str, str | None]]:
-    weather = weather_with_retry("Lisbon")
-    places = search_places("indoor things to do in Lisbon when it rains")
-    return weather, opening_hours(places)
+async def research() -> tuple[str, dict[str, str | None]]:
+    async def find_places() -> dict[str, str | None]:
+        # Langfuse stores times to the millisecond, so calls started together would
+        # come out in a random order. Start each one a few ms after the previous.
+        await asyncio.sleep(0.01)
+        places = await search_places("indoor things to do in Lisbon when it rains")
+        return await opening_hours(places)
+
+    return await asyncio.gather(weather_with_retry("Lisbon"), find_places())
 
 
 @observe(name="weather")
-def weather_with_retry(city: str) -> str:
+async def weather_with_retry(city: str) -> str:
     try:
-        return get_weather(city, attempt=1)
+        return await get_weather(city, attempt=1)
     except TimeoutError:  # @observe already marked the first call as an error
-        return get_weather(city, attempt=2)
+        return await get_weather(city, attempt=2)
 
 
 @observe(name="get_weather", as_type="tool")
-def get_weather(city: str, attempt: int) -> str:
+async def get_weather(city: str, attempt: int) -> str:
     if attempt == 1:
-        time.sleep(0.8)
+        await asyncio.sleep(0.8)
         raise TimeoutError(f"weather API didn't answer for {city} within 0.8s")
-    time.sleep(0.3)
+    await asyncio.sleep(0.3)
     return "Saturday: 70% chance of rain after 14:00, 16°C"
 
 
 @observe(name="search_places", as_type="retriever")
-def search_places(query: str) -> list[str]:
+async def search_places(query: str) -> list[str]:
     embed(query)
-    time.sleep(0.2)
+    await asyncio.sleep(0.2)
     return list(PLACES)
 
 
 @observe(name="opening_hours")
-def opening_hours(places: list[str]) -> dict[str, str | None]:
-    return {place: check_hours(place) for place in places}
+async def opening_hours(places: list[str]) -> dict[str, str | None]:
+    async def staggered(i: int, place: str) -> str | None:
+        await asyncio.sleep(0.005 * i)  # see find_places: keeps the calls in listed order
+        return await check_hours(place)
+
+    found = await asyncio.gather(*(staggered(i, place) for i, place in enumerate(places)))
+    return dict(zip(places, found))
 
 
 @observe(name="check_hours", as_type="tool")
-def check_hours(place: str) -> str | None:
-    time.sleep(0.1)
+async def check_hours(place: str) -> str | None:
+    await asyncio.sleep(0.1)
     hours = PLACES[place]
     if hours is None:
         get_client().update_current_span(
