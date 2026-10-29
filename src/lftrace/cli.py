@@ -13,6 +13,7 @@ from rich.text import Text
 
 from .fetch import FetchError, client, fetch_observations, latest_trace_id, load_file
 from .mermaid import COLORS, SYMBOLS, to_gantt, to_mermaid
+from .sequence import to_sequence
 from .summary import headline, issues, plain
 from .tree import Observation, build_tree
 
@@ -44,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     roots = build_tree(observations)
     header = headline(trace_id, observations)
     problems = issues(roots)
-    draw = to_gantt if args.timeline else to_mermaid
+    draw, color = VIEWS[args.view]
     source = draw(roots, max_depth=args.depth, comments=[plain(header), *(line for _, line in problems)])
     if args.mermaid:
         print(source, end="")
@@ -53,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     # Colors only reach a terminal; rich drops them for pipes and NO_COLOR.
     console = Console(highlight=False)
     drawing = termaid.render_rich(source, theme="mono", padding_x=2, padding_y=0, gap=3)
-    color_symbols(drawing)
+    color(drawing)
     console.print(styled(header), soft_wrap=True)
     console.print()
     console.print(drawing, soft_wrap=True)
@@ -73,6 +74,27 @@ def color_symbols(drawing: Text) -> None:
     status_of = {symbol: status for status, symbol in SYMBOLS.items()}
     for match in re.finditer(r"(?m)(?:│|^) *([✗!]) ", drawing.plain):
         drawing.stylize(f"not dim {COLORS[status_of[match[1]]]}", *match.span(1))
+
+
+def color_sequence(drawing: Text) -> None:
+    """Color a status's symbol and message in a label or note, and the x that ends a failed call.
+
+    The message follows "· " and ends at two spaces, a lifeline, a box edge, the
+    end of the line or the next status. Termaid 0.10.0 doesn't color text, so this does.
+    """
+    status_of = {symbol: status for status, symbol in SYMBOLS.items()}
+    for match in re.finditer(r"(?m)· ([✗!] .*?)(?= *(?:  |[┆│]|$| · [✗!] ))", drawing.plain):
+        drawing.stylize(f"not dim {COLORS[status_of[match[1][0]]]}", *match.span(1))
+    for match in re.finditer(r"(?<=[┄─])x|x(?=[┄─])", drawing.plain):
+        drawing.stylize(f"not dim {COLORS['error']}", *match.span())
+
+
+# Each view's writer and how its drawing is colored.
+VIEWS = {
+    "tree": (to_mermaid, color_symbols),
+    "timeline": (to_gantt, color_symbols),
+    "sequence": (to_sequence, color_sequence),
+}
 
 
 def styled(parts: list[tuple[str, str | None]]) -> Text:
@@ -99,9 +121,22 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--mermaid", action="store_true", help="print the Mermaid source instead of the drawing"
     )
-    parser.add_argument(
-        "--timeline", action="store_true", help="draw the steps on a time axis instead of as a tree"
+    views = parser.add_mutually_exclusive_group()
+    views.add_argument(
+        "--timeline",
+        dest="view",
+        action="store_const",
+        const="timeline",
+        help="draw the steps on a time axis instead of as a tree",
     )
+    views.add_argument(
+        "--sequence",
+        dest="view",
+        action="store_const",
+        const="sequence",
+        help="draw who called whom, in the order they ran",
+    )
+    parser.set_defaults(view="tree")
     parser.add_argument(
         "--depth", type=positive_int, metavar="N", help="show only the first N levels of the tree"
     )
