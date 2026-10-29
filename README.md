@@ -145,6 +145,7 @@ lftrace --file trace.json    show a trace saved as JSON, without network
 
   --mermaid    print the Mermaid source instead of the drawing
   --timeline   draw the steps on a time axis instead of as a tree
+  --sequence   draw who called whom, in the order they ran
   --depth N    show only the first N levels
 ```
 
@@ -166,6 +167,72 @@ end. It shows every step, not just the first and last, and `--depth` folds level
 tree. An event is a `◆`, and a step with no end time runs to the end of the chart. A failed
 step starts with `✗` and a warning with `!`. With `--mermaid` it prints a Mermaid gantt
 chart.
+
+`--sequence` draws who called whom, in the order they ran, as a Mermaid sequence diagram.
+Each lane is an agent, a model or the shared `tools` lane. The first lane is the trace's
+root, or a `trace` lane when the trace has several roots or a single step. A root that
+is an agent keeps its agent lane, and any other root gets a lane named after it. A root
+that failed or has a warning says so in a note after its children. A step is an arrow
+from the lane that called it, and a dashed return arrow that has its duration, tokens,
+cost and status. A failed step returns with `x` and its message. Work that has no lane of
+its own, such as a plain span or an event, is an arrow from a lane to itself.
+
+Steps that ran at the same time are in a `par` block, one branch each, and a branch over
+a wrapper span is labeled with its number and name. Retries of the same step are in a
+`loop` block that counts the failed ones. Like the tree, a run of more than three shows
+its first and last with a `+N more` note in between, and the note counts the errors it
+hides. Three or more parallel calls or self-messages with the same name fold into one
+call, such as `2.3.1–2.3.5. check_hours ×5`, whose return has the slowest duration and
+the count of every error and warning. Wrapper spans don't fold. `--depth` folds levels
+into `+N nested` on the return arrow. With `--mermaid` it prints a Mermaid sequence
+diagram.
+
+```
+$ lftrace --latest --sequence
+Trace 5cd8640a116790e88950c226f6fd21c3 · 1.32s · 132 tokens · $0.00 · 1 warning
+
+ ┌─────────────┐      ┌───────────────┐ ┌──────────┐  ┌────────────────┐           ┌───────┐
+ │ support-bot │      │ billing-agent │ │ fake-llm │  │ fake-embedding │           │ tools │
+ └─────────────┘      └───────────────┘ └──────────┘  └────────────────┘           └───────┘
+        ┆ 1. triage           ┆               ┆                ┆                       ┆
+        ──────────────────────────────────────►                ┆                       ┆
+        ┆ 405ms · 24 tok      ┆               ┆                ┆                       ┆
+        ◄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄                ┆                       ┆
+        ┆ 2. billing-agent    ┆               ┆                ┆                       ┆
+        ──────────────────────►               ┆                ┆                       ┆
+        ┆                     ┆               ┆                ┆                       ┆
+        ┆                   ┌────────────────────────────────────────────────────────────┐
+        ┆                   │[par]                                                       │
+        ┆                   │ ┆ 2.1. lookup_account            ┆                       ┆ │
+        ┆                   │ ─────────────────────────────────────────────────────────► │
+        ┆                   │ ┆ 301ms         ┆                ┆                       ┆ │
+        ┆                   │ ◄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ │
+        ┆                   │ ┆               ┆                ┆                       ┆ │
+        ┆                   │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
+        ┆                   │ ┆ 2.2. search_policy             ┆                       ┆ │
+        ┆                   │ ─────────────────────────────────────────────────────────► │
+        ┆                   │ ┆               ┆                ┆ 2.2.1. embed_query    ┆ │
+        ┆                   │ ┆               ┆                ◄──────────────────────── │
+        ┆                   │ ┆               ┆                ┆ 101ms · 8 tok         ┆ │
+        ┆                   │ ┆               ┆                ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄► │
+        ┆                   │ ┆ 302ms         ┆                ┆                       ┆ │
+        ┆                   │ ◄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ │
+        ┆                   │ ┆               ┆                ┆                       ┆ │
+        ┆                   └────────────────────────────────────────────────────────────┘
+        ┆                     ┆ 2.3. refund   ┆                ┆                       ┆
+        ┆                     ─────────────────────────────────────────────────────────►
+        ┆                     ┆ 200ms · ! €29 refund needs approval                    ┆
+        ┆                     ◄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+        ┆ 515ms               ┆               ┆                ┆                       ┆
+        ◄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄               ┆                ┆                       ┆
+        ┆ 3. reply            ┆               ┆                ┆                       ┆
+        ──────────────────────────────────────►                ┆                       ┆
+        ┆ 401ms · 100 tok     ┆               ┆                ┆                       ┆
+        ◄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄                ┆                       ┆
+        ┆                     ┆               ┆                ┆                       ┆
+
+! 2.3. refund (TOOL): €29 refund needs approval
+```
 
 ### Credentials
 
@@ -191,8 +258,8 @@ lftrace --file trace.json
 1. Fetch the trace's observations with the Langfuse Python SDK
    (`api.observations.get_many(trace_id=...)`, all pages).
 2. Build a tree from each observation's parent id, with siblings ordered by start time.
-3. Write it as a left-to-right Mermaid flowchart, or with `--timeline` as a gantt chart
-   (`--mermaid` shows it).
+3. Write it as a left-to-right Mermaid flowchart, with `--timeline` as a gantt chart, or
+   with `--sequence` as a sequence diagram (`--mermaid` shows it).
 4. Draw it with [Termaid](https://github.com/fasouto/termaid) (`termaid.render_rich()`).
 
 lftrace works with Langfuse Cloud and recent self-hosted Langfuse versions (it uses the
@@ -202,8 +269,9 @@ v2 observations API). On Python 3.10 it installs Langfuse SDK v4; on 3.11+, v5.
 
 lftrace is a prototype. Before it's ready for production, Termaid, the library that
 draws the diagrams, needs a few changes: drawing steps with many children without
-crossing lines, reading `<br>` line breaks in labels, and coloring label text. Until then,
-lftrace works around them, and some of the limits below come from that.
+crossing lines, reading `<br>` line breaks in labels, coloring label text, and keeping the
+spaces in a sequence label where it crosses a lifeline. Until then, lftrace works around
+them, and some of the limits below come from that.
 
 - **Three children per step in the tree.** A step with more children shows the first and
   the last, with `+N more` in between, because Termaid 0.10.0 draws stray lines when a
@@ -218,6 +286,9 @@ lftrace works around them, and some of the limits below come from that.
   timing, tokens, cost and status. Open the trace in Langfuse for the rest.
 - **Short labels.** Boxes cut names at 40 characters and messages at 30. The full
   messages are listed under the diagram and in the `--mermaid` comments.
+- **Wide sequence diagrams.** Each agent and each model gets its own lane, so traces with
+  many of them get wide. The tools share one lane. A long label widens the gap between the
+  two lanes it joins.
 - **`\n` line breaks.** Labels break lines with `\n` because Termaid 0.10.0 doesn't read
   `<br>`. mermaid.live and GitHub show them as line breaks, but some viewers show `\n`
   as text.
