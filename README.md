@@ -12,7 +12,7 @@ lftrace --latest --mermaid   # the same trace as Mermaid text, for Claude Code o
 
 Paste the `--mermaid` output into Claude Code, or let it run the command itself, and it
 sees what your app's agent did: the steps in the order they ran, with durations, tokens,
-cost and every error message in full. No screenshots, no browser.
+cost and every error message in full. It doesn't need a screenshot of the Langfuse UI.
 
 lftrace is a prototype. See [Limitations](#limitations) for what it doesn't do yet.
 
@@ -89,7 +89,8 @@ Trace 7f3e0c2a9b1d4e6f8a0b2c4d6e8f0a1b · 6.21s · 2,522 tokens · $0.0005 · 2 
 uv tool install git+https://github.com/fasouto/lftrace   # puts lftrace on your PATH
 ```
 
-Or, from a clone of this repo, run it in place with `uv run lftrace`. It needs Python 3.10+.
+Or, from a clone of this repo, run it in place with `uv run lftrace`. It needs Python
+3.10 or later.
 
 ## Quick start
 
@@ -108,10 +109,10 @@ If you'd rather keep the keys in a file, `cp .env.example .env`, fill it in, and
 shape:
 
 - `demo_agent.py`: a trip planner for a rainy day in Lisbon. A weather call times out and
-  is retried, a retriever finds places and a tool checks their opening hours. The weather
-  lookup and the place finding run at the same time, and so do the opening hours checks.
-  A writer sub-agent drafts the day, a guardrail flags a place with no opening hours, and
-  the writer revises.
+  the agent retries it. A retriever finds places and a tool checks their opening hours.
+  The weather lookup and the place finding run at the same time, and so do the opening
+  hours checks. A writer sub-agent drafts the day, a guardrail flags a place with no
+  opening hours, and the writer revises.
 - `support_bot.py`: a support bot hands a billing question to a sub-agent, which looks up
   the account and searches the refund policy at the same time, then asks for a refund
   that needs a human's approval.
@@ -131,8 +132,8 @@ In Claude Code, `!` runs a command and adds its output to the conversation:
 > Why did get_weather fail the first time, and why does the fact-check warn about Tram 28?
 ```
 
-The Mermaid output starts with `%%` comment lines that carry the totals and every error
-and warning in full, so nothing is lost when a box shortens a message. It's still valid
+The Mermaid output starts with `%%` comment lines that have the totals and every error and
+warning in full, so your agent still sees a message that a box cut short. It's still valid
 Mermaid, so you can also paste it into a Mermaid viewer such as
 [mermaid.live](https://mermaid.live).
 
@@ -150,16 +151,16 @@ lftrace --file trace.json    show a trace saved as JSON, without network
 ```
 
 The header has the trace's totals: duration, tokens, cost, errors and warnings. Each box is
-one step, with arrows from each step to the steps it ran, left to right. Steps are
-numbered in the order they ran: `2.1` is the first step inside step 2. A box shows the
-step's name, its type and duration, and for LLM calls the model, tokens and cost when
-Langfuse has them. A failed step ends with `✗` and the start of its message, a warning
-with `!`; the full messages are listed under the diagram.
+one step, with arrows from each step to the steps it ran, left to right. lftrace numbers
+steps in the order they ran, so `2.1` is the first step inside step 2. A box shows the
+step's name, type and duration. For LLM calls it also shows the model, tokens and cost
+when Langfuse has them. A failed step ends with `✗` and the start of its message, and a
+warning with `!`. The full messages are under the diagram.
 
-To keep big traces readable, a step with more than three children shows the first and the
-last with a `+N more` box in between, and `--depth` folds deeper levels into a `+N nested`
-line. Hidden errors and warnings are still counted in those boxes and listed under the
-diagram with their step numbers.
+A step with more than three children shows the first and the last, with a `+N more` box
+in between, and `--depth` folds deeper levels into a `+N nested` line. Those boxes still
+count the errors and warnings they hide, and the list under the diagram has them with
+their step numbers.
 
 `--timeline` shows each step as a bar on a time axis that starts at the trace's start, so
 parallel steps overlap. A row has the step's number, name and a bar from its start to its
@@ -172,20 +173,19 @@ chart.
 Each lane is an agent, a model or the shared `tools` lane. The first lane is the trace's
 root, or a `trace` lane when the trace has several roots or a single step. A root that
 is an agent keeps its agent lane, and any other root gets a lane named after it. A root
-that failed or has a warning says so in a note after its children. A step is an arrow
-from the lane that called it, and a dashed return arrow that has its duration, tokens,
-cost and status. A failed step returns with `x` and its message. Work that has no lane of
-its own, such as a plain span or an event, is an arrow from a lane to itself.
+that failed or has a warning gets a note after its children. A step is an arrow from the
+lane that called it, and a dashed return arrow with its duration, tokens, cost and
+status. A failed step's return arrow ends in `x` and has its message. Work that has no
+lane of its own, such as a plain span or an event, is an arrow from a lane to itself.
 
-Steps that ran at the same time are in a `par` block, one branch each, and a branch over
-a wrapper span is labeled with its number and name. Retries of the same step are in a
-`loop` block that counts the failed ones. Like the tree, a run of more than three shows
+Steps that ran at the same time are in a `par` block, one branch each, and a branch for a
+wrapper span has the span's number and name as its label. Retries of the same step are in
+a `loop` block that counts the failed ones. Like the tree, a run of more than three shows
 its first and last with a `+N more` note in between, and the note counts the errors it
 hides. Three or more parallel calls or self-messages with the same name fold into one
-call, such as `2.3.1–2.3.5. check_hours ×5`, whose return has the slowest duration and
-the count of every error and warning. Wrapper spans don't fold. `--depth` folds levels
-into `+N nested` on the return arrow. With `--mermaid` it prints a Mermaid sequence
-diagram.
+call, such as `2.3.1–2.3.5. check_hours ×5`. Its return has the slowest duration and
+counts every error and warning. Wrapper spans don't fold. `--depth` folds levels into
+`+N nested` on the return arrow. With `--mermaid` it prints a Mermaid sequence diagram.
 
 ```
 $ lftrace --latest --sequence
@@ -238,7 +238,7 @@ Trace 5cd8640a116790e88950c226f6fd21c3 · 1.32s · 132 tokens · $0.00 · 1 warn
 
 lftrace reads `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_HOST` (EU cloud,
 `https://cloud.langfuse.com`, if unset). Like the Langfuse SDK, it also accepts
-`LANGFUSE_BASE_URL`, which wins over `LANGFUSE_HOST`. It only reads data and never prints
+`LANGFUSE_BASE_URL`, and uses it when both are set. It only reads data and never prints
 the keys.
 
 ### Saving a trace
@@ -263,7 +263,8 @@ lftrace --file trace.json
 4. Draw it with [Termaid](https://github.com/fasouto/termaid) (`termaid.render_rich()`).
 
 lftrace works with Langfuse Cloud and recent self-hosted Langfuse versions (it uses the
-v2 observations API). On Python 3.10 it installs Langfuse SDK v4; on 3.11+, v5.
+v2 observations API). On Python 3.10 it installs Langfuse SDK v4, and on 3.11 or later it
+installs v5.
 
 ## Limitations
 
@@ -275,8 +276,8 @@ them, and some of the limits below come from that.
 
 - **Three children per step in the tree.** A step with more children shows the first and
   the last, with `+N more` in between, because Termaid 0.10.0 draws stray lines when a
-  node has more than three children. Errors and warnings in the hidden steps are still
-  counted and listed. `--timeline` shows every step.
+  node has more than three children. lftrace still counts and lists the errors and
+  warnings in the hidden steps. `--timeline` shows every step.
 - **Deep traces get wide.** Each level adds about 35 columns, so four levels fit in 120.
   For deeper traces, use a wider terminal or `--depth`.
 - **A fixed width for the timeline.** Termaid 0.10.0 draws gantt charts 80 columns wide,
@@ -285,7 +286,7 @@ them, and some of the limits below come from that.
 - **No inputs, outputs or scores.** The diagram shows each step's place in the tree, its
   timing, tokens, cost and status. Open the trace in Langfuse for the rest.
 - **Short labels.** Boxes cut names at 40 characters and messages at 30. The full
-  messages are listed under the diagram and in the `--mermaid` comments.
+  messages are under the diagram and in the `--mermaid` comments.
 - **Wide sequence diagrams.** Each agent and each model gets its own lane, so traces with
   many of them get wide. The tools share one lane. A long label widens the gap between the
   two lanes it joins.
@@ -303,10 +304,10 @@ uvx ruff check && uvx ruff format --check
 ```
 
 The tests use a saved trace (`tests/fixtures/trace.json`) and a fake HTTP server, so they
-don't need network or keys.
+don't need a network connection or keys.
 
-The GIF is recorded with [vhs](https://github.com/charmbracelet/vhs): `vhs docs/demo.tape`
-runs the three examples against the Langfuse project in your `.env`.
+[vhs](https://github.com/charmbracelet/vhs) records the GIF. `vhs docs/demo.tape` runs the
+three examples against the Langfuse project in your `.env` and writes `docs/demo.gif`.
 
 ## License
 
