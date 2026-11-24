@@ -1,9 +1,10 @@
-"""A fake coding agent that needs five attempts to fix a failing test.
+"""A fake coding agent that needs eight attempts to fix a failing test.
 
-Each attempt asks the LLM for an edit and runs the tests. The first four
-attempts fail, so lftrace folds the middle ones into "+3 more" and counts
-their errors. Every prompt carries the earlier failures, so the token counts
-grow with each attempt. It needs only your Langfuse keys:
+Each attempt asks the LLM for an edit and runs the tests. The first seven
+attempts fail, so lftrace shows the first three and the last two, folds the
+middle three into "+3 more" and counts their errors. Every prompt carries the
+earlier failures, so the token counts grow with each attempt. It needs only
+your Langfuse keys:
 
     uv run examples/coding_agent.py
 
@@ -21,13 +22,16 @@ from shared import complete, run
 
 TASK = "Make test_invoice_total pass."
 SOURCE = "def invoice_total(lines):\n    return lines[0].amount\n"
-ATTEMPTS = 5
+ATTEMPTS = 8
 # Why test_invoice_total fails after each attempt; the last attempt passes.
 FAILURES = [
     "expected 58.00, got 29.00",
     "expected 58.00, got 0.00",
     "TypeError: unsupported operand type(s) for +: 'float' and 'str'",
     "expected 58.00, got 57.99",
+    "expected 58.00, got 62.40",
+    "AttributeError: 'dict' object has no attribute 'amount'",
+    "expected 58.00, got 58.01",
 ]
 
 
