@@ -7,6 +7,7 @@ trace into text in your terminal, so you can read it, and so can your coding age
 
 ```sh
 lftrace --latest             # draw the most recent trace
+lftrace --latest --sequence  # who called whom, as a sequence diagram
 lftrace --latest --mermaid   # the same trace as Mermaid text, for Claude Code or any LLM
 ```
 
@@ -20,30 +21,28 @@ lftrace is a prototype. See [Limitations](#limitations) for what it doesn't do y
 
 ```
 $ lftrace --latest
-Trace c8747b0761d23f523151d65142f00555 · 1.63s · 132 tokens · $0.00 · 1 warning
+Trace 5cd8640a116790e88950c226f6fd21c3 · 1.32s · 132 tokens · $0.00 · 1 warning
 
-                       ┌────────────────────┐      ┌─────────────────────┐
-                       │     1. triage      │      │                     │
-                       │ GENERATION · 404ms │      │ 2.1. lookup_account │
-                  ╭───►│      fake-llm      │ ╭───►│    TOOL · 301ms     │
-                  │    │       24 tok       │ │    │                     │
-                  │    └────────────────────┘ │    └─────────────────────┘
-                  │                           │
-                  │                           │
-┌───────────────┐ │    ┌────────────────────┐ │    ┌─────────────────────┐   ┌────────────────────┐
-│               │ │    │                    │ │    │                     │   │ 2.2.1. embed_query │
-│  support-bot  │ │    │  2. billing-agent  │ │    │ 2.2. search_policy  │   │ EMBEDDING · 106ms  │
-│ AGENT · 1.63s ├─┼───►│   AGENT · 816ms    ├─┼───►│  RETRIEVER · 308ms  ├──►│   fake-embedding   │
-│               │ │    │                    │ │    │                     │   │       8 tok        │
-└───────────────┘ │    └────────────────────┘ │    └─────────────────────┘   └────────────────────┘
-                  │                           │
-                  │                           │
-                  │    ┌────────────────────┐ │    ┌─────────────────────┐
-                  │    │      3. reply      │ │    │     2.3. refund     │
-                  │    │ GENERATION · 406ms │ │    │    TOOL · 206ms     │
-                  ╰───►│      fake-llm      │ ╰───►│ ! €29 refund needs  │
-                       │      100 tok       │      │      approval       │
-                       └────────────────────┘      └─────────────────────┘
+                    ┌────────────────────┐   ┌─────────────────────┐
+                    │     1. triage      │   │                     │
+                    │ GENERATION · 405ms │   │ 2.1. lookup_account │
+                  ╭►│      fake-llm      │ ╭►│    TOOL · 301ms     │
+                  │ │       24 tok       │ │ │                     │
+                  │ └────────────────────┘ │ └─────────────────────┘
+                  │                        │
+┌───────────────┐ │ ┌────────────────────┐ │ ┌─────────────────────┐  ┌────────────────────┐
+│               │ │ │                    │ │ │                     │  │ 2.2.1. embed_query │
+│  support-bot  │ │ │  2. billing-agent  │ │ │ 2.2. search_policy  │  │ EMBEDDING · 101ms  │
+│ AGENT · 1.32s ├─┤ │   AGENT · 515ms    ├─┤ │  RETRIEVER · 302ms  ├─►│   fake-embedding   │
+│               │ ├►│                    │ ├►│                     │  │       8 tok        │
+└───────────────┘ │ └────────────────────┘ │ └─────────────────────┘  └────────────────────┘
+                  │                        │
+                  │ ┌────────────────────┐ │ ┌─────────────────────┐
+                  │ │      3. reply      │ │ │     2.3. refund     │
+                  │ │ GENERATION · 401ms │ │ │    TOOL · 200ms     │
+                  ╰►│      fake-llm      │ ╰►│ ! €29 refund needs  │
+                    │      100 tok       │   │      approval       │
+                    └────────────────────┘   └─────────────────────┘
 
 ! 2.3. refund (TOOL): €29 refund needs approval
 ```
@@ -116,9 +115,9 @@ shape:
 - `support_bot.py`: a support bot hands a billing question to a sub-agent, which looks up
   the account and searches the refund policy at the same time, then asks for a refund
   that needs a human's approval.
-- `coding_agent.py`: a coding agent needs five attempts to fix a failing test. lftrace
-  folds the middle attempts into `+3 more` and counts their errors. The attempts run one
-  after another, so its timeline has no overlap.
+- `coding_agent.py`: a coding agent needs eight attempts to fix a failing test. lftrace
+  shows the first three and the last two, and folds the middle three into `+3 more` that
+  counts their errors. The attempts run one after another, so its timeline has no overlap.
 
 They need only Langfuse keys. With `OPENROUTER_API_KEY` set, their LLM steps are real calls
 through [OpenRouter](https://openrouter.ai).
@@ -157,17 +156,17 @@ step's name, type and duration. For LLM calls it also shows the model, tokens an
 when Langfuse has them. A failed step ends with `✗` and the start of its message, and a
 warning with `!`. The full messages are under the diagram.
 
-A step with more than three children shows the first and the last, with a `+N more` box
-in between, and `--depth` folds deeper levels into a `+N nested` line. Those boxes still
-count the errors and warnings they hide, and the list under the diagram has them with
-their step numbers.
+A step with more than six children shows the first three and the last two, with a
+`+N more` box in between, and `--depth` folds deeper levels into a `+N nested` line.
+Those boxes still count the errors and warnings they hide, and the list under the diagram
+has them with their step numbers.
 
 `--timeline` shows each step as a bar on a time axis that starts at the trace's start, so
 parallel steps overlap. A row has the step's number, name and a bar from its start to its
-end. It shows every step, not just the first and last, and `--depth` folds levels as in the
-tree. An event is a `◆`, and a step with no end time runs to the end of the chart. A failed
-step starts with `✗` and a warning with `!`. With `--mermaid` it prints a Mermaid gantt
-chart.
+end. It shows every step, with none folded into `+N more`, and `--depth` folds levels as
+in the tree. An event is a `◆`, and a step with no end time runs to the end of the chart.
+A failed step starts with `✗` and a warning with `!`. With `--mermaid` it prints a Mermaid
+gantt chart.
 
 `--sequence` draws who called whom, in the order they ran, as a Mermaid sequence diagram.
 Each lane is an agent, a model or the shared `tools` lane. The first lane is the trace's
@@ -180,9 +179,9 @@ lane of its own, such as a plain span or an event, is an arrow from a lane to it
 
 Steps that ran at the same time are in a `par` block, one branch each, and a branch for a
 wrapper span has the span's number and name as its label. Retries of the same step are in
-a `loop` block that counts the failed ones. Like the tree, a run of more than three shows
-its first and last with a `+N more` note in between, and the note counts the errors it
-hides. Three or more parallel calls or self-messages with the same name fold into one
+a `loop` block that counts the failed ones. Like the tree, a run of more than six shows its
+first three and last two with a `+N more` note in between, and the note counts the errors
+it hides. Three or more parallel calls or self-messages with the same name fold into one
 call, such as `2.3.1–2.3.5. check_hours ×5`. Its return has the slowest duration and
 counts every error and warning. Wrapper spans don't fold. `--depth` folds levels into
 `+N nested` on the return arrow. With `--mermaid` it prints a Mermaid sequence diagram.
@@ -268,19 +267,15 @@ installs v5.
 
 ## Limitations
 
-lftrace is a prototype. Before it's ready for production, Termaid, the library that
-draws the diagrams, needs a few changes: drawing steps with many children without
-crossing lines, reading `<br>` line breaks in labels, coloring label text, and keeping the
-spaces in a sequence label where it crosses a lifeline. Until then, lftrace works around
-them, and some of the limits below come from that.
+lftrace is a prototype, with these limits:
 
-- **Three children per step in the tree.** A step with more children shows the first and
-  the last, with `+N more` in between, because Termaid 0.10.0 draws stray lines when a
-  node has more than three children. lftrace still counts and lists the errors and
-  warnings in the hidden steps. `--timeline` shows every step.
+- **Six children per step.** A step with more children shows the first three and the
+  last two, with `+N more` in between, in the tree and in sequence diagrams. lftrace still
+  counts and lists the errors and warnings in the hidden steps. `--timeline` shows every
+  step.
 - **Deep traces get wide.** Each level adds about 35 columns, so four levels fit in 120.
   For deeper traces, use a wider terminal or `--depth`.
-- **A fixed width for the timeline.** Termaid 0.10.0 draws gantt charts 80 columns wide,
+- **A fixed width for the timeline.** Termaid 0.13.0 draws gantt charts 80 columns wide,
   whatever the terminal, so names are cut at 24 characters and short steps in a long trace
   can be a single block.
 - **No inputs, outputs or scores.** The diagram shows each step's place in the tree, its
@@ -290,9 +285,6 @@ them, and some of the limits below come from that.
 - **Wide sequence diagrams.** Each agent and each model gets its own lane, so traces with
   many of them get wide. The tools share one lane. A long label widens the gap between the
   two lanes it joins.
-- **`\n` line breaks.** Labels break lines with `\n` because Termaid 0.10.0 doesn't read
-  `<br>`. mermaid.live and GitHub show them as line breaks, but some viewers show `\n`
-  as text.
 - **`--latest` looks back 7 days**, and a new trace can take a few seconds to show up.
 
 ## Development
