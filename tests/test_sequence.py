@@ -61,7 +61,7 @@ def agent(*children: Observation, end_ms: float = 1000) -> list[Observation]:
 
 def test_source_starts_with_comments_then_lanes_then_calls(roots):
     source = to_sequence(roots, comments=["Trace x · 1s", "✗ failed:\nreason; more"])
-    assert source.splitlines()[:3] == ["sequenceDiagram", "%% Trace x · 1s", "%% ✗ failed: reason, more"]
+    assert source.splitlines()[:3] == ["sequenceDiagram", "%% Trace x · 1s", "%% ✗ failed: reason; more"]
     assert list(lanes(source).values())[:2] == ["research-agent", "openai/gpt-4o-mini"]
     assert source.index("participant") < source.index("->>")
 

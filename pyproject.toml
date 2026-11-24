@@ -17,7 +17,7 @@ classifiers = [
 ]
 dependencies = [
     "langfuse>=4.7",
-    "termaid[rich]>=0.10.0",
+    "termaid[rich]>=0.13.0",
 ]
 
 [project.scripts]

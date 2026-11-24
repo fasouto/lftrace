@@ -140,7 +140,7 @@ def test_steps_without_an_end_are_active_bars_that_run_to_the_last_start():
 
 def test_comments_go_after_the_header(roots):
     lines = to_gantt(roots, comments=["Trace x · 1s", "✗ step failed:\nreason; more"]).splitlines()
-    assert lines[:4] == ["gantt", "%% Trace x · 1s", "%% ✗ step failed: reason, more", "  dateFormat x"]
+    assert lines[:4] == ["gantt", "%% Trace x · 1s", "%% ✗ step failed: reason; more", "  dateFormat x"]
 
 
 @pytest.mark.parametrize(

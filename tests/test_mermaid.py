@@ -7,7 +7,6 @@ from lftrace.mermaid import (
     format_cost,
     format_duration,
     format_tokens,
-    middle_first,
     to_mermaid,
 )
 from lftrace.tree import Observation
@@ -91,36 +90,30 @@ def test_each_step_points_to_its_children(roots):
     )
 
 
-def test_edges_come_after_the_nodes_middle_child_first(roots):
+def test_edges_come_after_the_nodes(roots):
     lines = to_mermaid(roots).splitlines()
     edges = [line for line in lines if "-->" in line]
     assert lines.index(edges[0]) > max(i for i, line in enumerate(lines) if '"]' in line or '")' in line)
-    assert edges[:3] == ["  n0 --> n2", "  n0 --> n1", "  n0 --> n3"]  # +4 more, 1. plan, 6. format
-
-
-def test_middle_first():
-    assert middle_first(["a", "b", "c"]) == ["b", "a", "c"]
-    assert middle_first(["a", "b"]) == ["a", "b"]
-    assert middle_first(list("abcdef")) == list("cdbeaf")
+    assert edges[:3] == ["  n0 --> n1", "  n0 --> n2", "  n0 --> n3"]  # 1. plan, +4 more, 6. format
 
 
 def test_steps_are_numbered_name_first(roots):
     source = to_mermaid(roots, max_children=ALL)
-    assert '["research-agent\\nAGENT · 6.21s"]' in source  # the trace itself has no number
-    assert '["2. search_docs\\nTOOL · 470ms"]' in source
-    assert '["2.1. cache-miss\\nEVENT"]' in source  # events have no duration
-    assert '["2.2. vector-search\\nRETRIEVER · 244ms"]' in source
+    assert '["research-agent<br>AGENT · 6.21s"]' in source  # the trace itself has no number
+    assert '["2. search_docs<br>TOOL · 470ms"]' in source
+    assert '["2.1. cache-miss<br>EVENT"]' in source  # events have no duration
+    assert '["2.2. vector-search<br>RETRIEVER · 244ms"]' in source
 
 
 def test_generation_label_shows_model_tokens_and_cost(roots):
     source = to_mermaid(roots, max_children=ALL)
-    assert '["1. plan\\nGENERATION · 870ms\\nopenai/gpt-4o-mini\\n470 tok · $0.000097"]' in source
+    assert '["1. plan<br>GENERATION · 870ms<br>openai/gpt-4o-mini<br>470 tok · $0.000097"]' in source
 
 
 def test_status_comes_last_with_a_symbol_and_a_short_message(roots):
     source = to_mermaid(roots, max_children=ALL)
-    assert '["3. get_weather\\nTOOL · 2.01s\\n✗ TimeoutError: weather API tim…"]:::error' in source
-    assert '\\n! answered without weather data"]:::warning' in source
+    assert '["3. get_weather<br>TOOL · 2.01s<br>✗ TimeoutError: weather API tim…"]:::error' in source
+    assert '<br>! answered without weather data"]:::warning' in source
 
 
 def test_every_step_has_the_same_shape(roots):
@@ -147,21 +140,21 @@ def test_comments_go_after_the_header_on_one_line_each(roots):
 
 def test_three_children_are_shown_by_default(roots):
     source = to_mermaid(roots)
-    assert '["1. plan\\n' in source and '["6. format' in source
+    assert '["1. plan<br>' in source and '["6. format' in source
     for hidden in ("2. search_docs", "3. get_weather", "4. fetch_pages", "5. answer"):
         assert hidden not in source
     # The hidden steps hold both errors and the warning, so the collapsed node counts them.
-    assert '("+4 more\\n✗ 2 errors\\n! 1 warning"):::error' in source
+    assert '("+4 more<br>✗ 2 errors<br>! 1 warning"):::error' in source
 
 
 def test_long_sibling_lists_collapse_in_the_middle(roots):
     source = to_mermaid(roots, max_children=6)
     for shown in (1, 2, 3, 8, 9):
-        assert f'["4.{shown}. fetch_page_{shown}\\n' in source
+        assert f'["4.{shown}. fetch_page_{shown}<br>' in source
     for hidden in (4, 5, 6, 7):
         assert f"fetch_page_{hidden}" not in source
     # fetch_page_5 failed, so the collapsed node says so and is colored as an error.
-    assert '("+4 more\\n✗ 1 error"):::error' in source
+    assert '("+4 more<br>✗ 1 error"):::error' in source
 
 
 def test_short_lists_are_not_collapsed(roots):
@@ -179,14 +172,14 @@ def test_collapse():
 def test_depth_1_shows_only_the_root_with_a_summary(roots):
     source = to_mermaid(roots, max_depth=1)
     assert source.splitlines()[1:] == [
-        '  n0["research-agent\\nAGENT · 6.21s\\n+17 nested\\n✗ 2 errors\\n! 1 warning"]'
+        '  n0["research-agent<br>AGENT · 6.21s<br>+17 nested<br>✗ 2 errors<br>! 1 warning"]'
     ]
 
 
 def test_depth_2_summarizes_grandchildren(roots):
     source = to_mermaid(roots, max_depth=2, max_children=ALL)
-    assert '"4. fetch_pages\\nSPAN · 3.55s\\n+9 nested\\n✗ 1 error"' in source
-    assert '"2. search_docs\\nTOOL · 470ms\\n+2 nested"' in source
+    assert '"4. fetch_pages<br>SPAN · 3.55s<br>+9 nested<br>✗ 1 error"' in source
+    assert '"2. search_docs<br>TOOL · 470ms<br>+2 nested"' in source
     assert "fetch_page_1" not in source
 
 

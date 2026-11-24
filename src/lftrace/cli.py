@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Colors only reach a terminal; rich drops them for pipes and NO_COLOR.
     console = Console(highlight=False)
-    drawing = termaid.render_rich(source, theme="mono", padding_x=2, padding_y=0, gap=3)
+    drawing = termaid.render_rich(source, theme="mono", padding_x=2, padding_y=0, gap=2)
     color(drawing)
     console.print(styled(header), soft_wrap=True)
     console.print()
@@ -68,8 +68,9 @@ def main(argv: list[str] | None = None) -> int:
 def color_symbols(drawing: Text) -> None:
     """Color the ✗ or ! that starts a status line inside a box, or a timeline row.
 
-    Termaid 0.10.0 colors a box's border from its classDef, but not its text,
-    and draws crit bars like the others. It draws a timeline's task names dim.
+    A classDef colors a box's whole label in one color, so a box that mixes
+    statuses gets each symbol in its own color from here. Termaid draws a
+    timeline in one color, so the symbols are colored here too.
     """
     status_of = {symbol: status for status, symbol in SYMBOLS.items()}
     for match in re.finditer(r"(?m)(?:│|^) *([✗!]) ", drawing.plain):
@@ -80,7 +81,8 @@ def color_sequence(drawing: Text) -> None:
     """Color a status's symbol and message in a label or note, and the x that ends a failed call.
 
     The message follows "· " and ends at two spaces, a lifeline, a box edge, the
-    end of the line or the next status. Termaid 0.10.0 doesn't color text, so this does.
+    end of the line or the next status. Sequence diagrams have no classDef, so
+    Termaid colors none of their text.
     """
     status_of = {symbol: status for status, symbol in SYMBOLS.items()}
     for match in re.finditer(r"(?m)· ([✗!] .*?)(?= *(?:  |[┆│]|$| · [✗!] ))", drawing.plain):

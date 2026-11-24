@@ -297,12 +297,13 @@ def status_part(obs: Observation) -> str | None:
 def escape(text: str) -> str:
     """Make text safe in a message, alias, block label or note, as Mermaid and Termaid read it.
 
-    Termaid 0.10.0 doesn't decode entity codes in sequence diagrams, so where
+    Termaid 0.13.0 doesn't decode entity codes in sequence diagrams, so where
     Mermaid would read markup this writes a look-alike character.
     """
     text = " ".join(text.split())  # a newline would end the statement
     text = text.replace(";", ",")  # Mermaid ends the statement at any ";"
     text = text.replace("#", "♯")  # Mermaid starts a comment at "#"
     text = re.sub(r"^((?:no)?wrap):", r"\1∶", text, flags=re.IGNORECASE)  # Mermaid reads these as a mode
-    text = re.sub(r"<(?=br\s*/?>)", "‹", text, flags=re.IGNORECASE)  # Termaid shows <br> as text
+    # Mermaid and Termaid both break the line at <br>, so the look-alike keeps the text as written.
+    text = re.sub(r"<(?=br\s*/?>)", "‹", text, flags=re.IGNORECASE)
     return re.sub(r"%(?=%)", "% ", text)

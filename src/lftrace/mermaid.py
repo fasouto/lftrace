@@ -9,16 +9,14 @@ from datetime import datetime
 
 from .tree import Observation, descendants, number_steps, walk
 
-# Termaid 0.10.0 breaks label lines on a literal "\n" and shows Mermaid's
-# standard <br> as text, so we use "\n". Switch to "<br>" once Termaid reads it.
-LINE_BREAK = "\\n"
+LINE_BREAK = "<br>"
 
 # Siblings shown before the middle ones collapse into "+N more". Termaid 0.10.0
 # draws crossing lines when a node has more than three children.
 MAX_CHILDREN = 3
 MAX_NAME = 40
 MAX_MESSAGE = 30  # the full message is listed under the diagram
-# Termaid 0.10.0 draws gantt charts 80 columns wide, and the longest task name
+# Termaid 0.13.0 draws gantt charts 80 columns wide, and the longest task name
 # takes its width from the bars.
 MAX_TASK_NAME = 24
 
@@ -40,7 +38,7 @@ TICKS = [
 ]
 
 # A gantt line that starts like this isn't a task for Mermaid 11 or Termaid
-# 0.10.0, whatever follows. Lines start with a step number or a status symbol,
+# 0.13.0, whatever follows. Lines start with a step number or a status symbol,
 # except for a single root's, which has no number.
 KEYWORD = re.compile(
     r".?%|\d{4}-\d\d-\d\d|gantt|inclusiveenddates|topaxis|accdescr|href"
@@ -131,7 +129,7 @@ def to_mermaid(
         if item.parent:
             fan_outs.setdefault(item.parent, []).append(ids[item])
     for parent, children in fan_outs.items():
-        lines += [f"  {ids[parent]} --> {child}" for child in middle_first(children)]
+        lines += [f"  {ids[parent]} --> {child}" for child in children]
     for status in sorted(used):
         lines.append(f"  classDef {status} stroke:{COLORS[status]},color:{COLORS[status]}")
     return "\n".join(lines) + "\n"
@@ -192,9 +190,7 @@ def to_gantt(
 
 
 def comment_lines(comments: Iterable[str]) -> list[str]:
-    # Termaid 0.10.0 splits flowchart lines on ";" before it drops comments, so
-    # the rest of a comment after a ";" would be parsed as nodes.
-    return [f"%% {' '.join(c.split())}".replace(";", ",") for c in comments]
+    return [f"%% {' '.join(c.split())}" for c in comments]
 
 
 def axis(span_ms: int) -> list[str]:
@@ -234,16 +230,6 @@ def label(obs: Observation, number: str | None = None) -> list[str]:
     return parts
 
 
-def middle_first(items: list[str]) -> list[str]:
-    """Order a fan-out's edges from the middle child outwards.
-
-    Termaid 0.10.0 routes edges in the order they're listed. When the middle edge
-    goes first it runs straight, and the others branch off it without detours.
-    """
-    center = (len(items) - 1) / 2
-    return [item for _, item in sorted(enumerate(items), key=lambda pair: abs(pair[0] - center))]
-
-
 def worst(observations: Iterable[Observation]) -> str | None:
     levels = {o.level for o in observations}
     return "error" if "ERROR" in levels else "warning" if "WARNING" in levels else None
@@ -277,8 +263,7 @@ def escape(text: str) -> str:
     that looks like an entity code already, so it shows as written.
     """
     text = " ".join(text.split())  # a newline would end the statement
-    # Termaid 0.10.0 decodes entity codes before it breaks lines on a literal
-    # "\n", so even "#92;n" would become a line break.
+    # Termaid breaks a label line at a literal "\n", even one written as "#92;n".
     text = text.replace("\\", "/")
     return re.sub(r'^`|["<]|[#&](?=\w+;)', lambda m: f"#{ord(m[0])};", text)
 
@@ -286,12 +271,12 @@ def escape(text: str) -> str:
 def escape_task(text: str) -> str:
     """Make text safe as a gantt task name, as Mermaid and Termaid read it.
 
-    Termaid 0.10.0 doesn't decode entity codes in gantt charts, so where escape()
+    Termaid 0.13.0 doesn't decode entity codes in gantt charts, so where escape()
     writes a code this swaps in a look-alike or a space.
     """
     text = " ".join(text.split())  # a newline would end the task
     text = text.replace(":", "∶")  # the first ":" ends the name
-    text = re.sub(r"%(?=%)", "% ", text)  # Termaid 0.10.0 starts a comment at any %%
+    text = re.sub(r"%(?=%)", "% ", text)  # Termaid 0.13.0 starts a comment at any %%
     return re.sub(r"#(?=\w+;)", "# ", text)  # Mermaid would decode it
 
 
