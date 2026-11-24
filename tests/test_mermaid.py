@@ -94,7 +94,6 @@ def test_edges_come_after_the_nodes(roots):
     lines = to_mermaid(roots).splitlines()
     edges = [line for line in lines if "-->" in line]
     assert lines.index(edges[0]) > max(i for i, line in enumerate(lines) if '"]' in line or '")' in line)
-    assert edges[:3] == ["  n0 --> n1", "  n0 --> n2", "  n0 --> n3"]  # 1. plan, +4 more, 6. format
 
 
 def test_steps_are_numbered_name_first(roots):
@@ -138,17 +137,15 @@ def test_comments_go_after_the_header_on_one_line_each(roots):
     assert len(termaid.parse(source).nodes) == len(termaid.parse(to_mermaid(roots)).nodes)
 
 
-def test_three_children_are_shown_by_default(roots):
+def test_six_children_are_shown_in_full(roots):
     source = to_mermaid(roots)
-    assert '["1. plan<br>' in source and '["6. format' in source
-    for hidden in ("2. search_docs", "3. get_weather", "4. fetch_pages", "5. answer"):
-        assert hidden not in source
-    # The hidden steps hold both errors and the warning, so the collapsed node counts them.
-    assert '("+4 more<br>✗ 2 errors<br>! 1 warning"):::error' in source
+    for name in ("1. plan", "2. search_docs", "3. get_weather", "4. fetch_pages", "5. answer"):
+        assert f'["{name}<br>' in source
+    assert '["6. format ' in source
 
 
-def test_long_sibling_lists_collapse_in_the_middle(roots):
-    source = to_mermaid(roots, max_children=6)
+def test_long_sibling_lists_show_three_then_the_count_then_two(roots):
+    source = to_mermaid(roots)
     for shown in (1, 2, 3, 8, 9):
         assert f'["4.{shown}. fetch_page_{shown}<br>' in source
     for hidden in (4, 5, 6, 7):
@@ -157,12 +154,34 @@ def test_long_sibling_lists_collapse_in_the_middle(roots):
     assert '("+4 more<br>✗ 1 error"):::error' in source
 
 
+def test_eight_children_fold_the_middle_three():
+    parent = Observation(id="p", type="AGENT", name="agent")
+    parent.children = [Observation(id=f"c{i}", type="TOOL", name=f"tool_{i}") for i in range(1, 9)]
+    source = to_mermaid([parent])
+    assert [name for name in (f"tool_{i}" for i in range(1, 9)) if name in source] == [
+        "tool_1",
+        "tool_2",
+        "tool_3",
+        "tool_7",
+        "tool_8",
+    ]
+    assert '("+3 more")' in source
+
+
+def test_a_collapsed_node_counts_the_errors_and_warnings_it_hides(roots):
+    source = to_mermaid(roots, max_children=3)
+    for hidden in ("2. search_docs", "3. get_weather", "4. fetch_pages", "5. answer"):
+        assert hidden not in source
+    assert '("+4 more<br>✗ 2 errors<br>! 1 warning"):::error' in source
+
+
 def test_short_lists_are_not_collapsed(roots):
     assert "more" not in to_mermaid(roots, max_children=ALL)
 
 
 def test_collapse():
     items = list(range(10))
+    assert collapse(items[:6], 6) == items[:6]
     assert collapse(items, 3) == [0, [1, 2, 3, 4, 5, 6, 7, 8], 9]
     assert collapse(items, 6) == [0, 1, 2, [3, 4, 5, 6, 7], 8, 9]
     assert collapse(items, 10) == items

@@ -319,15 +319,18 @@ def test_a_branch_over_a_plain_step_keeps_the_wrapper_name_only_on_the_first_bra
 
 def test_the_note_branch_of_a_long_par_has_no_label():
     workers = []
-    for i in range(6):
+    for i in range(8):
         worker = step(f"w{i}", "worker", i, 500, "SPAN")
         worker.children = [step(f"c{i}", "job", i, 400)]
         workers.append(worker)
     out = lines(to_sequence(agent(*workers)))
     assert [line for line in out if line.startswith(("par", "and"))] == [
         "par 1. worker",
+        "and 2. worker",
+        "and 3. worker",
         "and",
-        "and 6. worker",
+        "and 7. worker",
+        "and 8. worker",
     ]
 
 
@@ -367,11 +370,30 @@ def test_different_steps_are_not_a_loop():
     assert "loop" not in to_sequence(agent(step("a", "a", 0, 1), step("b", "b", 2, 3)))
 
 
-def test_a_long_loop_shows_the_first_a_note_and_the_last():
-    runs = [step(str(i), "run", i * 100, i * 100 + 50, level="ERROR" if i == 2 else None) for i in range(5)]
-    source = to_sequence(agent(*runs))
-    assert "loop run ×5, 1 failed" in lines(source)
-    assert [m.split(": ")[1] for m in messages(source) if "->>tools" in m] == ["1. run", "5. run"]
+def runs(count: int) -> list[Observation]:
+    return [
+        step(str(i), "run", i * 100, i * 100 + 50, level="ERROR" if i == 4 else None) for i in range(count)
+    ]
+
+
+def test_a_loop_of_six_shows_every_run():
+    source = to_sequence(agent(*runs(6)))
+    assert [m.split(": ")[1] for m in messages(source) if "->>tools" in m] == [
+        f"{i}. run" for i in range(1, 7)
+    ]
+    assert not any(line.startswith("Note") for line in lines(source))
+
+
+def test_a_long_loop_shows_the_first_three_a_note_and_the_last_two():
+    source = to_sequence(agent(*runs(8)))
+    assert "loop run ×8, 1 failed" in lines(source)
+    assert [m.split(": ")[1] for m in messages(source) if "->>tools" in m] == [
+        "1. run",
+        "2. run",
+        "3. run",
+        "7. run",
+        "8. run",
+    ]
     assert "Note over agent: +3 more · ✗ 1 error" in lines(source)
 
 
@@ -406,20 +428,33 @@ def test_two_parallel_steps_of_one_kind_stay_in_par():
 
 def test_a_long_par_shows_the_first_a_note_branch_and_the_last(roots):
     source = to_sequence(roots)
-    assert [line for line in lines(source) if line.startswith("and")] == ["and 4. fetch_pages", "and", "and"]
+    assert [line for line in lines(source) if line.startswith("and")] == ["and 4. fetch_pages", *["and"] * 5]
     # The branch names the fetch_pages wrapper, so its own par doesn't repeat the name.
     assert [line for line in lines(source) if line.startswith("par")] == ["par", "par"]
-    assert "Note over research-agent: +7 more · ✗ 1 error" in lines(source)
+    assert "Note over research-agent: +4 more · ✗ 1 error" in lines(source)
     called = [m.split(": ")[1] for m in messages(source) if m.startswith("research-agent->>tools")]
-    assert called[-2:] == ["4.1. fetch_page_1", "4.9. fetch_page_9"]
+    assert called[-5:] == [f"4.{i}. fetch_page_{i}" for i in (1, 2, 3, 8, 9)]
     assert not any("fetch_page_5" in m for m in messages(source))
 
 
+def test_a_par_of_six_different_steps_shows_every_branch():
+    source = to_sequence(agent(*(step(str(i), f"s{i}", i, 500) for i in range(6))))
+    assert not any(line.startswith("Note") for line in lines(source))
+    assert [m.split(": ")[1] for m in messages(source) if "-->>" not in m] == [
+        f"{i}. s{i - 1}" for i in range(1, 7)
+    ]
+
+
 def test_a_long_par_of_different_steps_also_hides_the_middle():
-    roots = agent(*(step(str(i), f"s{i}", i, 500) for i in range(6)))
-    source = to_sequence(roots)
-    assert [m for m in lines(source) if m.startswith("Note")] == ["Note over agent: +4 more"]
-    assert [m.split(": ")[1] for m in messages(source) if "-->>" not in m] == ["1. s0", "6. s5"]
+    source = to_sequence(agent(*(step(str(i), f"s{i}", i, 500) for i in range(8))))
+    assert [m for m in lines(source) if m.startswith("Note")] == ["Note over agent: +3 more"]
+    assert [m.split(": ")[1] for m in messages(source) if "-->>" not in m] == [
+        "1. s0",
+        "2. s1",
+        "3. s2",
+        "7. s6",
+        "8. s7",
+    ]
 
 
 def test_loops_and_wrappers_nest_inside_par_branches():

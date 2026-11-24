@@ -6,14 +6,17 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TypeVar
 
 from .tree import Observation, descendants, number_steps, walk
 
+T = TypeVar("T")
+
 LINE_BREAK = "<br>"
 
-# Siblings shown before the middle ones collapse into "+N more". Termaid 0.10.0
-# draws crossing lines when a node has more than three children.
-MAX_CHILDREN = 3
+# Most siblings shown in full. A longer list shows its first three and last two,
+# and the ones between collapse into "+N more".
+MAX_CHILDREN = 6
 MAX_NAME = 40
 MAX_MESSAGE = 30  # the full message is listed under the diagram
 # Termaid 0.13.0 draws gantt charts 80 columns wide, and the longest task name
@@ -245,7 +248,7 @@ def problems(observations: Iterable[Observation]) -> list[str]:
     return lines
 
 
-def collapse(items: list[Observation], max_children: int | None) -> list[Observation | list[Observation]]:
+def collapse(items: list[T], max_children: int | None) -> list[T | list[T]]:
     """Keep the first and last items of a long list; group the middle ones. None keeps them all."""
     if max_children is None or len(items) <= max_children:
         return list(items)

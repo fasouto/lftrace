@@ -78,7 +78,7 @@ def test_sequence_draws_lanes_calls_and_the_issue_list(capsys):
     assert lines[0] == f"Trace {TRACE_ID} · 6.21s · 2,522 tokens · $0.0005 · 2 errors · 1 warning"
     lanes = next(line for line in lines if "research-agent" in line and "openai/gpt-4o-mini" in line)
     assert lanes.index("research-agent") < lanes.index("openai/gpt-4o-mini") < lanes.index("tools")
-    assert any("[par]" in line for line in lines) and any("+7 more · ✗ 1 error" in line for line in lines)
+    assert any("[par]" in line for line in lines) and any("+4 more · ✗ 1 error" in line for line in lines)
     assert any("2.01s · ✗ TimeoutError: weather API tim…" in line for line in lines)
     assert lines[-3:] == [
         "✗ 3. get_weather (TOOL): TimeoutError: weather API timed out after 2s",

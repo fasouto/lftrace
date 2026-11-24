@@ -12,6 +12,7 @@ from .mermaid import (
     STATUS,
     SYMBOLS,
     Step,
+    collapse,
     comment_lines,
     format_cost,
     format_duration,
@@ -174,7 +175,7 @@ class Diagram:
         if len(steps) > 2 and len({kind(s) for s in steps}) == 1 and "inline" not in map(self.mode, steps):
             self.fold(caller, steps)
             return
-        for i, item in enumerate(shown(steps)):
+        for i, item in enumerate(collapse(steps, MAX_CHILDREN)):
             inline = isinstance(item, Step) and self.mode(item) == "inline"
             label = title(item) if inline else wrapper if i == 0 and isinstance(item, Step) else None
             if i == 0:
@@ -189,7 +190,7 @@ class Diagram:
 
     def run(self, caller: str, steps: list[Step]) -> None:
         """Draw steps in turn. Past MAX_CHILDREN the middle ones become a note."""
-        for item in shown(steps):
+        for item in collapse(steps, MAX_CHILDREN):
             self.draw(caller, item)
 
     def draw(self, caller: str, item: Step | list[Step]) -> None:
@@ -245,13 +246,6 @@ def segments(steps: list[Step]) -> list[Segment]:
         else:
             result.append(Segment("single", group))
     return result
-
-
-def shown(steps: list[Step]) -> list[Step | list[Step]]:
-    """The steps to draw: all of them, or the first and last with the middle ones as one list."""
-    if len(steps) > MAX_CHILDREN:
-        return [steps[0], steps[1:-1], steps[-1]]
-    return list(steps)
 
 
 def title(step: Step) -> str:
